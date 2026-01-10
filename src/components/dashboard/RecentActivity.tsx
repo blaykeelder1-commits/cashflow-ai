@@ -1,142 +1,124 @@
+"use client";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowDownLeft, ArrowUpRight, Clock, AlertCircle } from "lucide-react";
+import { ArrowDownLeft } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDashboard } from "@/hooks/use-dashboard";
 
-interface ActivityItem {
-  id: string;
-  type: "payment_received" | "invoice_sent" | "invoice_overdue" | "payment_reminder";
-  title: string;
-  description: string;
-  amount?: number;
-  client: string;
-  clientInitials: string;
-  timestamp: string;
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 }
 
-const recentActivities: ActivityItem[] = [
-  {
-    id: "1",
-    type: "payment_received",
-    title: "Payment Received",
-    description: "Invoice #1039 paid in full",
-    amount: 12500,
-    client: "Acme Corp",
-    clientInitials: "AC",
-    timestamp: "2 hours ago",
-  },
-  {
-    id: "2",
-    type: "invoice_overdue",
-    title: "Invoice Overdue",
-    description: "Invoice #1042 is 30 days past due",
-    amount: 8750,
-    client: "TechStart Inc",
-    clientInitials: "TS",
-    timestamp: "5 hours ago",
-  },
-  {
-    id: "3",
-    type: "invoice_sent",
-    title: "Invoice Sent",
-    description: "Invoice #1045 sent to client",
-    amount: 15000,
-    client: "Global Solutions",
-    clientInitials: "GS",
-    timestamp: "1 day ago",
-  },
-  {
-    id: "4",
-    type: "payment_reminder",
-    title: "Reminder Sent",
-    description: "Payment reminder for Invoice #1041",
-    client: "Bright Ideas LLC",
-    clientInitials: "BI",
-    timestamp: "1 day ago",
-  },
-  {
-    id: "5",
-    type: "payment_received",
-    title: "Payment Received",
-    description: "Partial payment for Invoice #1038",
-    amount: 5000,
-    client: "Metro Design",
-    clientInitials: "MD",
-    timestamp: "2 days ago",
-  },
-];
-
-const getActivityIcon = (type: ActivityItem["type"]) => {
-  switch (type) {
-    case "payment_received":
-      return <ArrowDownLeft className="h-4 w-4 text-green-600" />;
-    case "invoice_sent":
-      return <ArrowUpRight className="h-4 w-4 text-blue-600" />;
-    case "invoice_overdue":
-      return <AlertCircle className="h-4 w-4 text-red-600" />;
-    case "payment_reminder":
-      return <Clock className="h-4 w-4 text-yellow-600" />;
-  }
-};
-
-const getActivityBadge = (type: ActivityItem["type"]) => {
-  switch (type) {
-    case "payment_received":
-      return <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100">Received</Badge>;
-    case "invoice_sent":
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100">Sent</Badge>;
-    case "invoice_overdue":
-      return <Badge variant="destructive">Overdue</Badge>;
-    case "payment_reminder":
-      return <Badge variant="outline">Reminder</Badge>;
-  }
-};
-
-const formatCurrency = (amount: number) => {
+function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 0,
   }).format(amount);
-};
+}
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours === 0) {
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      return diffMinutes <= 1 ? "Just now" : `${diffMinutes} minutes ago`;
+    }
+    return diffHours === 1 ? "1 hour ago" : `${diffHours} hours ago`;
+  }
+  if (diffDays === 1) return "1 day ago";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function ActivitySkeleton() {
+  return (
+    <div className="flex items-center gap-4 rounded-lg border p-3">
+      <Skeleton className="h-10 w-10 rounded-full" />
+      <div className="flex-1 space-y-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3 w-48" />
+      </div>
+      <div className="text-right space-y-2">
+        <Skeleton className="h-4 w-16" />
+        <Skeleton className="h-3 w-20" />
+      </div>
+    </div>
+  );
+}
 
 export function RecentActivity() {
+  const { data, isLoading, error } = useDashboard();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Activity</CardTitle>
-        <CardDescription>Latest transactions and invoice updates</CardDescription>
+        <CardTitle>Recent Payments</CardTitle>
+        <CardDescription>Latest payments received</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {recentActivities.map((activity) => (
-            <div
-              key={activity.id}
-              className="flex items-center gap-4 rounded-lg border p-3 transition-colors hover:bg-muted/50"
-            >
-              <Avatar className="h-10 w-10">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                  {activity.clientInitials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center gap-2">
-                  {getActivityIcon(activity.type)}
-                  <p className="text-sm font-medium">{activity.title}</p>
-                  {getActivityBadge(activity.type)}
+          {isLoading ? (
+            <>
+              <ActivitySkeleton />
+              <ActivitySkeleton />
+              <ActivitySkeleton />
+              <ActivitySkeleton />
+              <ActivitySkeleton />
+            </>
+          ) : error ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Failed to load recent activity
+            </p>
+          ) : data?.recentPayments && data.recentPayments.length > 0 ? (
+            data.recentPayments.map((payment) => (
+              <div
+                key={payment.id}
+                className="flex items-center gap-4 rounded-lg border p-3 transition-colors hover:bg-muted/50"
+              >
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                    {getInitials(payment.clientName)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <ArrowDownLeft className="h-4 w-4 text-green-600" />
+                    <p className="text-sm font-medium">Payment Received</p>
+                    <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100">
+                      Received
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Invoice #{payment.invoiceNumber} - {payment.clientName}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {activity.description} - {activity.client}
-                </p>
+                <div className="text-right">
+                  <p className="text-sm font-medium">{formatCurrency(payment.amount)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatRelativeTime(payment.date)}
+                  </p>
+                </div>
               </div>
-              <div className="text-right">
-                {activity.amount && (
-                  <p className="text-sm font-medium">{formatCurrency(activity.amount)}</p>
-                )}
-                <p className="text-xs text-muted-foreground">{activity.timestamp}</p>
-              </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No recent payments. Payments will appear here when received.
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

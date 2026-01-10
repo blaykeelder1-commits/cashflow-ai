@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   LayoutDashboard,
   FileText,
@@ -24,6 +25,17 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 const mainNavItems = [
   {
@@ -63,6 +75,7 @@ const secondaryNavItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { data: session, status } = useSession();
 
   return (
     <Sidebar>
@@ -124,14 +137,35 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="flex items-center gap-3 px-4 py-3">
-          <Avatar className="h-8 w-8">
-            <AvatarImage src="/avatar.png" alt="User" />
-            <AvatarFallback>JD</AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium">John Doe</span>
-            <span className="text-xs text-muted-foreground">john@company.com</span>
-          </div>
+          {status === "loading" ? (
+            <>
+              <Skeleton className="h-8 w-8 rounded-full" />
+              <div className="flex flex-col gap-1">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+            </>
+          ) : session?.user ? (
+            <>
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={session.user.image ?? undefined} alt={session.user.name ?? "User"} />
+                <AvatarFallback>{getInitials(session.user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">{session.user.name ?? "User"}</span>
+                <span className="text-xs text-muted-foreground">{session.user.email}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <Avatar className="h-8 w-8">
+                <AvatarFallback>?</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">Not signed in</span>
+              </div>
+            </>
+          )}
         </div>
       </SidebarFooter>
     </Sidebar>

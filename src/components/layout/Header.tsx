@@ -1,6 +1,7 @@
 "use client";
 
 import { Bell, Search } from "lucide-react";
+import { useSession, signOut } from "next-auth/react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +16,21 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 export function Header() {
+  const { data: session, status } = useSession();
+
   return (
     <header className="flex h-14 items-center gap-4 border-b bg-background px-4 lg:px-6">
       <SidebarTrigger className="-ml-1" />
@@ -81,20 +95,36 @@ export function Header() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="rounded-full">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src="/avatar.png" alt="User" />
-                <AvatarFallback>JD</AvatarFallback>
-              </Avatar>
+              {status === "loading" ? (
+                <Skeleton className="h-8 w-8 rounded-full" />
+              ) : (
+                <Avatar className="h-8 w-8">
+                  <AvatarImage
+                    src={session?.user?.image ?? undefined}
+                    alt={session?.user?.name ?? "User"}
+                  />
+                  <AvatarFallback>{getInitials(session?.user?.name)}</AvatarFallback>
+                </Avatar>
+              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              {session?.user?.name ?? "My Account"}
+              {session?.user?.email && (
+                <p className="text-xs font-normal text-muted-foreground">
+                  {session.user.email}
+                </p>
+              )}
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem>Profile</DropdownMenuItem>
             <DropdownMenuItem>Settings</DropdownMenuItem>
             <DropdownMenuItem>Billing</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Log out</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}>
+              Log out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

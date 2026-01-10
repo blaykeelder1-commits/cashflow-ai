@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   AreaChart,
   Area,
@@ -12,36 +13,8 @@ import {
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-// Mock data for cash flow projections
-const generateData = (days: number) => {
-  const data = [];
-  const today = new Date();
-  let inflow = 45000;
-  let outflow = 35000;
-
-  for (let i = 0; i < days; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() + i);
-
-    // Add some variance
-    inflow = inflow + (Math.random() - 0.4) * 5000;
-    outflow = outflow + (Math.random() - 0.5) * 3000;
-
-    data.push({
-      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      inflow: Math.round(inflow),
-      outflow: Math.round(outflow),
-      net: Math.round(inflow - outflow),
-    });
-  }
-
-  return data;
-};
-
-const data30 = generateData(30);
-const data60 = generateData(60);
-const data90 = generateData(90);
+import { Skeleton } from "@/components/ui/skeleton";
+import { useForecasts } from "@/hooks/use-forecasts";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("en-US", {
@@ -52,7 +25,13 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-function ChartContent({ data }: { data: typeof data30 }) {
+interface ChartDataPoint {
+  date: string;
+  inflow: number;
+  cumulative: number;
+}
+
+function ChartContent({ data }: { data: ChartDataPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={350}>
       <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
@@ -61,9 +40,9 @@ function ChartContent({ data }: { data: typeof data30 }) {
             <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
             <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
           </linearGradient>
-          <linearGradient id="colorOutflow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+          <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -82,7 +61,7 @@ function ChartContent({ data }: { data: typeof data30 }) {
           className="text-muted-foreground"
         />
         <Tooltip
-          formatter={(value: number) => formatCurrency(value)}
+          formatter={(value) => formatCurrency(value as number)}
           contentStyle={{
             backgroundColor: "hsl(var(--background))",
             border: "1px solid hsl(var(--border))",
@@ -93,7 +72,7 @@ function ChartContent({ data }: { data: typeof data30 }) {
         <Area
           type="monotone"
           dataKey="inflow"
-          name="Cash Inflow"
+          name="Daily Inflow"
           stroke="#22c55e"
           fillOpacity={1}
           fill="url(#colorInflow)"
@@ -101,11 +80,11 @@ function ChartContent({ data }: { data: typeof data30 }) {
         />
         <Area
           type="monotone"
-          dataKey="outflow"
-          name="Cash Outflow"
-          stroke="#ef4444"
+          dataKey="cumulative"
+          name="Cumulative"
+          stroke="#3b82f6"
           fillOpacity={1}
-          fill="url(#colorOutflow)"
+          fill="url(#colorCumulative)"
           strokeWidth={2}
         />
       </AreaChart>
@@ -113,30 +92,72 @@ function ChartContent({ data }: { data: typeof data30 }) {
   );
 }
 
+function ChartSkeleton() {
+  return (
+    <div className="h-[350px] flex items-center justify-center">
+      <Skeleton className="h-full w-full" />
+    </div>
+  );
+}
+
+function ForecastTab({ days }: { days: number }) {
+  const { data, isLoading, error } = useForecasts(days);
+
+  if (isLoading) {
+    return <ChartSkeleton />;
+  }
+
+  if (error || !data) {
+    return (
+      <div className="h-[350px] flex items-center justify-center text-muted-foreground">
+        Failed to load forecast data
+      </div>
+    );
+  }
+
+  if (data.forecast.length === 0) {
+    return (
+      <div className="h-[350px] flex items-center justify-center text-muted-foreground">
+        No forecast data available. Add invoices to see projections.
+      </div>
+    );
+  }
+
+  const chartData: ChartDataPoint[] = data.forecast.map((point) => ({
+    date: new Date(point.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    inflow: Math.round(point.predictedInflow),
+    cumulative: Math.round(point.cumulative),
+  }));
+
+  return <ChartContent data={chartData} />;
+}
+
 export function CashFlowChart() {
+  const [activeTab, setActiveTab] = useState("30");
+
   return (
     <Card className="col-span-full">
       <CardHeader>
         <CardTitle>Cash Flow Projection</CardTitle>
         <CardDescription>
-          Projected cash inflow and outflow based on outstanding invoices and expected payments
+          Projected cash inflow based on outstanding invoices and payment patterns
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="30">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4">
             <TabsTrigger value="30">30 Days</TabsTrigger>
             <TabsTrigger value="60">60 Days</TabsTrigger>
             <TabsTrigger value="90">90 Days</TabsTrigger>
           </TabsList>
           <TabsContent value="30">
-            <ChartContent data={data30} />
+            <ForecastTab days={30} />
           </TabsContent>
           <TabsContent value="60">
-            <ChartContent data={data60} />
+            <ForecastTab days={60} />
           </TabsContent>
           <TabsContent value="90">
-            <ChartContent data={data90} />
+            <ForecastTab days={90} />
           </TabsContent>
         </Tabs>
       </CardContent>
