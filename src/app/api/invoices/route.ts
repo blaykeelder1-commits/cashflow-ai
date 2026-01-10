@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/config";
 import { prisma } from "@/lib/db/prisma";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 const invoiceCreateSchema = z.object({
@@ -32,17 +33,11 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get("sortBy") ?? "dueDate";
     const sortOrder = searchParams.get("sortOrder") ?? "asc";
 
-    const where: any = {
+    const where: Prisma.InvoiceWhereInput = {
       organizationId: session.user.organizationId,
+      ...(status && status !== "all" && { status }),
+      ...(clientId && { clientId }),
     };
-
-    if (status && status !== "all") {
-      where.status = status;
-    }
-
-    if (clientId) {
-      where.clientId = clientId;
-    }
 
     const [invoices, total] = await Promise.all([
       prisma.invoice.findMany({
@@ -162,7 +157,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(invoice, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
+      return NextResponse.json({ error: error.issues }, { status: 400 });
     }
     console.error("Invoices POST error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

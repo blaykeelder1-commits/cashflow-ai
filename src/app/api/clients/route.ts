@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/config";
 import { prisma } from "@/lib/db/prisma";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 const clientCreateSchema = z.object({
@@ -27,20 +28,16 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get("sortBy") ?? "name";
     const sortOrder = searchParams.get("sortOrder") ?? "asc";
 
-    const where: any = {
+    const where: Prisma.ClientWhereInput = {
       organizationId: session.user.organizationId,
+      ...(tier && tier !== "all" && { paymentBehaviorTier: tier }),
+      ...(search && {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+        ],
+      }),
     };
-
-    if (tier && tier !== "all") {
-      where.paymentBehaviorTier = tier;
-    }
-
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-      ];
-    }
 
     const [clients, total] = await Promise.all([
       prisma.client.findMany({
@@ -147,7 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(client, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
+      return NextResponse.json({ error: error.issues }, { status: 400 });
     }
     console.error("Clients POST error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

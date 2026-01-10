@@ -1,18 +1,20 @@
 import { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import type { Adapter } from "next-auth/adapters";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/db/prisma";
 import bcrypt from "bcryptjs";
+// Import types for module augmentation side-effects
+import "@/lib/auth/types";
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as any,
+  adapter: PrismaAdapter(prisma) as Adapter,
   session: {
     strategy: "jwt",
   },
   pages: {
     signIn: "/login",
-    signUp: "/signup",
     error: "/login",
   },
   providers: [
@@ -67,8 +69,8 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role;
-        token.organizationId = (user as any).organizationId;
+        token.role = user.role;
+        token.organizationId = user.organizationId;
       }
 
       // Handle session updates
@@ -80,9 +82,9 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).role = token.role;
-        (session.user as any).organizationId = token.organizationId;
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.organizationId = token.organizationId as string;
       }
       return session;
     },
