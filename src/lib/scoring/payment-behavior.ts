@@ -13,7 +13,6 @@
 import type {
   Client,
   Invoice,
-  Payment,
   PaymentBehaviorScore,
   PaymentBehaviorFactors,
   ClientTier,
