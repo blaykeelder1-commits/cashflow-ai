@@ -1,0 +1,342 @@
+// Cashflow AI - Database Schema
+// B2B SaaS Cash Flow Intelligence Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// MULTI-TENANCY & AUTH
+// ============================================
+
+model Organization {
+  id                 String   @id @default(cuid())
+  name               String
+  industry           String?
+  annualRevenueTier  String?  @map("annual_revenue_tier") // '100k-500k', '500k-1m', '1m-5m', '5m-20m'
+  timezone           String   @default("UTC")
+  currency           String   @default("USD")
+  subscriptionTier   String   @default("starter") @map("subscription_tier")
+  subscriptionStatus String   @default("trial") @map("subscription_status")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users             User[]
+  integrations      Integration[]
+  clients           Client[]
+  invoices          Invoice[]
+  followUpActions   FollowUpAction[]
+  cashFlowSnapshots CashFlowSnapshot[]
+  aiRecommendations AIRecommendation[]
+  auditLogs         AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  organizationId String?   @map("organization_id")
+  email          String    @unique
+  emailVerified  DateTime? @map("email_verified")
+  passwordHash   String?   @map("password_hash")
+  fullName       String?   @map("full_name")
+  image          String?
+  role           String    @default("viewer") // owner, admin, analyst, viewer
+  authProvider   String    @default("email") @map("auth_provider") // email, google
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization     Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accounts         Account[]
+  sessions         Session[]
+  followUpActions  FollowUpAction[]
+  aiRecommendations AIRecommendation[] @relation("ActionedBy")
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model Integration {
+  id                    String    @id @default(cuid())
+  organizationId        String    @map("organization_id")
+  provider              String    // quickbooks, xero, freshbooks
+  status                String    @default("active") // active, expired, revoked
+  accessTokenEncrypted  String?   @map("access_token_encrypted") @db.Text
+  refreshTokenEncrypted String?   @map("refresh_token_encrypted") @db.Text
+  tokenExpiresAt        DateTime? @map("token_expires_at")
+  lastSyncAt            DateTime? @map("last_sync_at")
+  syncCursor            String?   @map("sync_cursor")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@map("integrations")
+}
+
+// ============================================
+// CORE BUSINESS ENTITIES
+// ============================================
+
+model Client {
+  id                   String   @id @default(cuid())
+  organizationId       String   @map("organization_id")
+  externalId           String?  @map("external_id") // ID from accounting system
+  name                 String
+  email                String?
+  phone                String?
+
+  // Computed scores (updated by AI service)
+  paymentBehaviorScore Int?     @map("payment_behavior_score") // 0-100
+  paymentBehaviorTier  String?  @map("payment_behavior_tier") // A, B, C, D
+  avgDaysToPay         Decimal? @map("avg_days_to_pay") @db.Decimal(5, 1)
+  totalInvoiced        Decimal  @default(0) @map("total_invoiced") @db.Decimal(15, 2)
+  totalPaid            Decimal  @default(0) @map("total_paid") @db.Decimal(15, 2)
+  totalOutstanding     Decimal  @default(0) @map("total_outstanding") @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices          Invoice[]
+  followUpActions   FollowUpAction[]
+  aiRecommendations AIRecommendation[]
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, paymentBehaviorScore])
+  @@map("clients")
+}
+
+model Invoice {
+  id             String  @id @default(cuid())
+  organizationId String  @map("organization_id")
+  clientId       String? @map("client_id")
+  externalId     String? @map("external_id") // ID from accounting system
+  invoiceNumber  String? @map("invoice_number")
+
+  // Amounts
+  amount     Decimal @db.Decimal(15, 2)
+  amountPaid Decimal @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  currency   String  @default("USD")
+
+  // Dates
+  issueDate DateTime  @map("issue_date") @db.Date
+  dueDate   DateTime  @map("due_date") @db.Date
+  paidDate  DateTime? @map("paid_date") @db.Date
+
+  // Status
+  status      String @default("pending") // pending, partial, paid, overdue, written_off
+  daysOverdue Int    @default(0) @map("days_overdue")
+
+  // AI Predictions (updated by AI service)
+  recoveryLikelihoodScore Int?      @map("recovery_likelihood_score") // 0-100
+  predictedPaymentDate    DateTime? @map("predicted_payment_date") @db.Date
+  recommendedAction       String?   @map("recommended_action")
+  recommendedActionDate   DateTime? @map("recommended_action_date") @db.Date
+
+  source    String   @default("sync") // sync, manual, csv
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client            Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  payments          InvoicePayment[]
+  followUpActions   FollowUpAction[]
+  aiRecommendations AIRecommendation[]
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, status])
+  @@index([organizationId, dueDate])
+  @@index([clientId])
+  @@map("invoices")
+}
+
+model InvoicePayment {
+  id            String   @id @default(cuid())
+  invoiceId     String   @map("invoice_id")
+  amount        Decimal  @db.Decimal(15, 2)
+  paymentDate   DateTime @map("payment_date") @db.Date
+  paymentMethod String?  @map("payment_method")
+  externalId    String?  @map("external_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_payments")
+}
+
+// ============================================
+// FOLLOW-UP & ACTIONS
+// ============================================
+
+model FollowUpAction {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  invoiceId      String?  @map("invoice_id")
+  clientId       String?  @map("client_id")
+  userId         String?  @map("user_id")
+
+  actionType     String    @map("action_type") // email, call, meeting, escalation
+  actionDate     DateTime  @default(now()) @map("action_date")
+  notes          String?   @db.Text
+  outcome        String?   // no_response, promised_payment, dispute, partial_payment
+  nextActionDate DateTime? @map("next_action_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("follow_up_actions")
+}
+
+// ============================================
+// ANALYTICS & FORECASTING
+// ============================================
+
+model CashFlowSnapshot {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  snapshotDate   DateTime @map("snapshot_date") @db.Date
+
+  // Actuals
+  totalReceivables  Decimal? @map("total_receivables") @db.Decimal(15, 2)
+  totalOverdue      Decimal? @map("total_overdue") @db.Decimal(15, 2)
+  overdue30Days     Decimal? @map("overdue_30_days") @db.Decimal(15, 2)
+  overdue60Days     Decimal? @map("overdue_60_days") @db.Decimal(15, 2)
+  overdue90PlusDays Decimal? @map("overdue_90_plus_days") @db.Decimal(15, 2)
+
+  // Forecasts
+  forecast7Day       Decimal?  @map("forecast_7_day") @db.Decimal(15, 2)
+  forecast14Day      Decimal?  @map("forecast_14_day") @db.Decimal(15, 2)
+  forecast30Day      Decimal?  @map("forecast_30_day") @db.Decimal(15, 2)
+  predictedGapDate   DateTime? @map("predicted_gap_date") @db.Date
+  predictedGapAmount Decimal?  @map("predicted_gap_amount") @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate])
+  @@index([organizationId, snapshotDate])
+  @@map("cash_flow_snapshots")
+}
+
+// ============================================
+// AI RECOMMENDATIONS
+// ============================================
+
+model AIRecommendation {
+  id             String @id @default(cuid())
+  organizationId String @map("organization_id")
+  invoiceId      String? @map("invoice_id")
+  clientId       String? @map("client_id")
+
+  recommendationType String  @map("recommendation_type") // follow_up, escalate, prioritize, deprioritize
+  recommendationText String  @map("recommendation_text") @db.Text
+  confidenceScore    Decimal? @map("confidence_score") @db.Decimal(3, 2) // 0.00-1.00
+  reasoning          String?  @db.Text
+
+  status      String    @default("pending") // pending, accepted, dismissed, expired
+  actionedAt  DateTime? @map("actioned_at")
+  actionedBy  String?   @map("actioned_by")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice        Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  actionedByUser User?        @relation("ActionedBy", fields: [actionedBy], references: [id], onDelete: SetNull)
+
+  @@map("ai_recommendations")
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id             String  @id @default(cuid())
+  organizationId String? @map("organization_id")
+  userId         String? @map("user_id")
+  action         String
+  entityType     String? @map("entity_type")
+  entityId       String? @map("entity_id")
+  oldValues      Json?   @map("old_values")
+  newValues      Json?   @map("new_values")
+  ipAddress      String? @map("ip_address")
+  userAgent      String? @map("user_agent") @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_logs")
+}
