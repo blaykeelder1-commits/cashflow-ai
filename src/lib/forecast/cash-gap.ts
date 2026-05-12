@@ -75,8 +75,7 @@ export function detectCashGaps(
 
       if (includeRecommendations) {
         currentGap.recommendations = generateGapRecommendations(
-          currentGap as CashGap,
-          minimumBalance
+          currentGap as CashGap
         );
       } else {
         currentGap.recommendations = [];
@@ -103,8 +102,7 @@ export function detectCashGaps(
 
     if (includeRecommendations) {
       finalGap.recommendations = generateGapRecommendations(
-        finalGap as CashGap,
-        minimumBalance
+        finalGap as CashGap
       );
     } else {
       finalGap.recommendations = [];
@@ -149,8 +147,7 @@ function calculateSeverity(durationDays: number, gapAmount: number): GapSeverity
 /**
  * Generate recommendations to address a cash gap
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function generateGapRecommendations(gap: CashGap, minimumBalance: number): string[] {
+function generateGapRecommendations(gap: CashGap): string[] {
   const recommendations: string[] = [];
   const daysUntilGap = Math.ceil(
     (gap.startDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)

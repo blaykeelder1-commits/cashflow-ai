@@ -174,8 +174,7 @@ export async function GET(request: NextRequest) {
       cashGaps,
       confidenceLevel: invoices.length > 10 ? "medium" : "low",
     });
-  } catch (error) {
-    console.error("Forecasts GET error:", error);
+  } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -33,3 +33,25 @@ export {
   generateBatchFollowUpRecommendations,
   getTodaysFollowUpQueue,
 } from './follow-up';
+
+// Behavior persistence (database operations)
+export {
+  savePaymentBehaviorScore,
+  getStoredScore,
+  getStoredScoresForOrganization,
+  batchUpdateScores,
+  getClientsWithStaleScores,
+  getScoreDistribution,
+  getScoreStatistics,
+  type StoredPaymentBehaviorScore,
+} from './behavior-persistence';
+
+// Batch scoring operations
+export {
+  recalculateAllScores,
+  recalculateStaleScores,
+  recalculateSingleClientScore,
+  updateClientTotals,
+  updateAllClientTotals,
+  type BatchScoringResult,
+} from './batch-scoring';

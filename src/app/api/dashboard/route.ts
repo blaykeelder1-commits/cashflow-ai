@@ -133,8 +133,7 @@ export async function GET() {
       })),
       clientsByTier,
     });
-  } catch (error) {
-    console.error("Dashboard API error:", error);
+  } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

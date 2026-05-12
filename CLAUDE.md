@@ -168,6 +168,13 @@ Before submitting changes:
 1. **Forgetting organizationId scope** - Always filter by organizationId
 2. **Using old Pages Router patterns** - This project uses App Router only
 3. **Not awaiting async operations** - Prisma calls are async, always await
+4. **Missing organizationId in utility functions** - API routes check organizationId, but internal lib functions (scoring, seasonal analysis) also need org filtering when they query the database directly
+5. **Console statements in production code** - Remove all console.log/console.error before deployment. Error information should be returned in the response, not logged to console
+6. **Using `unknown` type for Prisma Decimal fields** - Use `Prisma.Decimal | null` instead of `unknown` for proper type safety with database decimal fields
+7. **Unescaped apostrophes in JSX** - Use `&apos;` instead of `'` in JSX text content to pass ESLint react/no-unescaped-entities rule
+8. **TypeScript interfaces missing API fields** - Keep frontend type interfaces (like InvoiceClient, InvoicePayment) in sync with API responses. If a component uses a field, the interface must include it
+9. **null vs undefined type mismatches** - Prisma returns `null` for missing values, but some interfaces expect `undefined`. Use nullish coalescing (`?? undefined`) when assigning Prisma null values to interfaces expecting undefined
+10. **Unused error variables in catch blocks** - When removing console.error, also remove the error binding. Use `catch {` instead of `catch (error) {` if the error isn't used
 
 ## Verification Commands
 

@@ -320,8 +320,8 @@ async function generateInsights(
   try {
     const cashFlowInsight = await generateCashFlowSummary(forecast, gapSummary);
     insights.push(cashFlowInsight);
-  } catch (error) {
-    console.error('Failed to generate cash flow insight:', error);
+  } catch {
+    // Failed to generate cash flow insight
   }
 
   // Gap resolution insights for critical/high gaps
@@ -330,8 +330,8 @@ async function generateInsights(
     try {
       const gapInsight = await generateGapResolutionInsight(gap);
       insights.push(gapInsight);
-    } catch (error) {
-      console.error('Failed to generate gap insight:', error);
+    } catch {
+      // Failed to generate gap insight
     }
   }
 
@@ -343,8 +343,8 @@ async function generateInsights(
       try {
         const scoreInsight = await generateScoreExplanation(score, client.name);
         insights.push(scoreInsight);
-      } catch (error) {
-        console.error('Failed to generate score insight:', error);
+      } catch {
+        // Failed to generate score insight
       }
     }
   }
@@ -472,8 +472,8 @@ export async function analyzeClient(
   let insight: AIInsight | null = null;
   try {
     insight = await generateScoreExplanation(score, client.name);
-  } catch (error) {
-    console.error('Failed to generate client insight:', error);
+  } catch {
+    // Failed to generate client insight
   }
 
   return {

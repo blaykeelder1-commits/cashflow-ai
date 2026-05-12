@@ -1,93 +1,22 @@
 "use client";
 
-import { Bell, AlertTriangle, DollarSign, Clock, CheckCircle, X } from "lucide-react";
+import Link from "next/link";
+import {
+  Bell,
+  AlertTriangle,
+  DollarSign,
+  Clock,
+  Lightbulb,
+  RefreshCw,
+  AlertCircle,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-
-interface Notification {
-  id: string;
-  type: "overdue" | "payment" | "reminder" | "alert" | "success";
-  title: string;
-  description: string;
-  timestamp: string;
-  read: boolean;
-  client?: {
-    name: string;
-    initials: string;
-  };
-  amount?: number;
-  invoiceNumber?: string;
-}
-
-const notifications: Notification[] = [
-  {
-    id: "1",
-    type: "overdue",
-    title: "Invoice Overdue",
-    description: "Invoice #1042 from TechStart Inc is 30 days past due",
-    timestamp: "2 hours ago",
-    read: false,
-    client: { name: "TechStart Inc", initials: "TS" },
-    amount: 8750,
-    invoiceNumber: "INV-1042",
-  },
-  {
-    id: "2",
-    type: "payment",
-    title: "Payment Received",
-    description: "Payment received for Invoice #1039 from Acme Corp",
-    timestamp: "5 hours ago",
-    read: false,
-    client: { name: "Acme Corp", initials: "AC" },
-    amount: 12500,
-    invoiceNumber: "INV-1039",
-  },
-  {
-    id: "3",
-    type: "reminder",
-    title: "Payment Due Soon",
-    description: "Invoice #1041 from Bright Ideas LLC is due in 3 days",
-    timestamp: "1 day ago",
-    read: true,
-    client: { name: "Bright Ideas LLC", initials: "BI" },
-    amount: 22000,
-    invoiceNumber: "INV-1041",
-  },
-  {
-    id: "4",
-    type: "alert",
-    title: "High Risk Client",
-    description: "Metro Design has multiple overdue invoices",
-    timestamp: "1 day ago",
-    read: true,
-    client: { name: "Metro Design", initials: "MD" },
-  },
-  {
-    id: "5",
-    type: "success",
-    title: "Invoice Sent",
-    description: "Invoice #1045 successfully sent to Global Solutions",
-    timestamp: "2 days ago",
-    read: true,
-    client: { name: "Global Solutions", initials: "GS" },
-    amount: 15000,
-    invoiceNumber: "INV-1045",
-  },
-  {
-    id: "6",
-    type: "overdue",
-    title: "Invoice Overdue",
-    description: "Invoice #1043 from Metro Design is 15 days past due",
-    timestamp: "3 days ago",
-    read: true,
-    client: { name: "Metro Design", initials: "MD" },
-    amount: 12750,
-    invoiceNumber: "INV-1043",
-  },
-];
+import { Skeleton } from "@/components/ui/skeleton";
+import { useNotifications, type Notification } from "@/hooks/use-notifications";
 
 const getIcon = (type: Notification["type"]) => {
   switch (type) {
@@ -98,9 +27,9 @@ const getIcon = (type: Notification["type"]) => {
     case "reminder":
       return <Clock className="h-5 w-5 text-yellow-600" />;
     case "alert":
-      return <Bell className="h-5 w-5 text-orange-600" />;
-    case "success":
-      return <CheckCircle className="h-5 w-5 text-blue-600" />;
+      return <AlertCircle className="h-5 w-5 text-orange-600" />;
+    case "recommendation":
+      return <Lightbulb className="h-5 w-5 text-blue-600" />;
   }
 };
 
@@ -114,8 +43,8 @@ const getBadge = (type: Notification["type"]) => {
       return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Reminder</Badge>;
     case "alert":
       return <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">Alert</Badge>;
-    case "success":
-      return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">Success</Badge>;
+    case "recommendation":
+      return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">AI Insight</Badge>;
   }
 };
 
@@ -128,56 +57,125 @@ const formatCurrency = (amount: number) => {
 };
 
 function NotificationItem({ notification }: { notification: Notification }) {
+  const linkHref = notification.invoiceId
+    ? `/invoices/${notification.invoiceId}`
+    : notification.client
+      ? `/clients/${notification.client.id}`
+      : "#";
+
   return (
-    <Card className={`${!notification.read ? "bg-primary/5 border-primary/20" : ""}`}>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-            {getIcon(notification.type)}
-          </div>
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <p className="font-medium">{notification.title}</p>
-              {getBadge(notification.type)}
-              {!notification.read && (
-                <span className="h-2 w-2 rounded-full bg-primary" />
-              )}
+    <Link href={linkHref}>
+      <Card
+        className={`transition-colors hover:bg-muted/50 ${
+          !notification.read ? "bg-primary/5 border-primary/20" : ""
+        }`}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+              {getIcon(notification.type)}
             </div>
-            <p className="text-sm text-muted-foreground">{notification.description}</p>
-            {notification.client && (
-              <div className="flex items-center gap-2 mt-2">
-                <Avatar className="h-6 w-6">
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                    {notification.client.initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm">{notification.client.name}</span>
-                {notification.amount && (
-                  <span className="text-sm font-medium">
-                    {formatCurrency(notification.amount)}
-                  </span>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <p className="font-medium">{notification.title}</p>
+                {getBadge(notification.type)}
+                {!notification.read && (
+                  <span className="h-2 w-2 rounded-full bg-primary" />
                 )}
               </div>
-            )}
+              <p className="text-sm text-muted-foreground">{notification.description}</p>
+              {notification.client && (
+                <div className="flex items-center gap-2 mt-2">
+                  <Avatar className="h-6 w-6">
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                      {notification.client.initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm">{notification.client.name}</span>
+                  {notification.amount && (
+                    <span className="text-sm font-medium">
+                      {formatCurrency(notification.amount)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {notification.timestamp}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {notification.timestamp}
-            </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <X className="h-4 w-4" />
-            </Button>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+function NotificationSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-start gap-4">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-4 w-full" />
+            <div className="flex items-center gap-2 mt-2">
+              <Skeleton className="h-6 w-6 rounded-full" />
+              <Skeleton className="h-4 w-24" />
+            </div>
           </div>
+          <Skeleton className="h-4 w-16" />
         </div>
       </CardContent>
     </Card>
   );
 }
 
+function EmptyState({ type }: { type: string }) {
+  const messages: Record<string, { icon: React.ReactNode; text: string }> = {
+    all: { icon: <Bell className="h-12 w-12" />, text: "No notifications yet" },
+    unread: { icon: <Bell className="h-12 w-12" />, text: "All caught up!" },
+    overdue: { icon: <AlertTriangle className="h-12 w-12" />, text: "No overdue invoices" },
+    payment: { icon: <DollarSign className="h-12 w-12" />, text: "No recent payments" },
+    reminder: { icon: <Clock className="h-12 w-12" />, text: "No upcoming due dates" },
+    recommendation: { icon: <Lightbulb className="h-12 w-12" />, text: "No pending recommendations" },
+  };
+
+  const { icon, text } = messages[type] || messages.all;
+
+  return (
+    <div className="text-center py-12 text-muted-foreground">
+      <div className="mx-auto mb-4 opacity-50">{icon}</div>
+      <p>{text}</p>
+    </div>
+  );
+}
+
 export function NotificationCenter() {
-  const unreadCount = notifications.filter((n) => !n.read).length;
-  const overdueNotifications = notifications.filter((n) => n.type === "overdue");
-  const paymentNotifications = notifications.filter((n) => n.type === "payment");
+  const { data, isLoading, error, refetch, isFetching } = useNotifications();
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" />
+        <p className="text-muted-foreground mb-4">Failed to load notifications</p>
+        <Button variant="outline" onClick={() => refetch()}>
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
+  const counts = data?.counts || {
+    all: 0,
+    unread: 0,
+    overdue: 0,
+    payment: 0,
+    reminder: 0,
+    recommendation: 0,
+  };
 
   return (
     <div className="space-y-6">
@@ -189,57 +187,102 @@ export function NotificationCenter() {
           <div>
             <h2 className="text-lg font-semibold">Notification Center</h2>
             <p className="text-sm text-muted-foreground">
-              {unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}
+              {counts.unread} unread notification{counts.unread !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">Mark All as Read</Button>
-          <Button variant="outline">Settings</Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => refetch()}
+          disabled={isFetching}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
 
       <Tabs defaultValue="all">
         <TabsList>
-          <TabsTrigger value="all">
-            All ({notifications.length})
-          </TabsTrigger>
+          <TabsTrigger value="all">All ({counts.all})</TabsTrigger>
           <TabsTrigger value="unread">
-            Unread ({unreadCount})
+            Unread ({counts.unread})
+            {counts.unread > 0 && (
+              <span className="ml-1 h-2 w-2 rounded-full bg-primary" />
+            )}
           </TabsTrigger>
-          <TabsTrigger value="overdue">
-            Overdue ({overdueNotifications.length})
-          </TabsTrigger>
-          <TabsTrigger value="payments">
-            Payments ({paymentNotifications.length})
-          </TabsTrigger>
+          <TabsTrigger value="overdue">Overdue ({counts.overdue})</TabsTrigger>
+          <TabsTrigger value="payment">Payments ({counts.payment})</TabsTrigger>
+          <TabsTrigger value="recommendation">AI ({counts.recommendation})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="all" className="mt-4 space-y-3">
-          {notifications.map((notification) => (
-            <NotificationItem key={notification.id} notification={notification} />
-          ))}
-        </TabsContent>
-
-        <TabsContent value="unread" className="mt-4 space-y-3">
-          {notifications
-            .filter((n) => !n.read)
-            .map((notification) => (
-              <NotificationItem key={notification.id} notification={notification} />
+        {isLoading ? (
+          <div className="mt-4 space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <NotificationSkeleton key={i} />
             ))}
-        </TabsContent>
+          </div>
+        ) : (
+          <>
+            <TabsContent value="all" className="mt-4 space-y-3">
+              {data?.notifications.length === 0 ? (
+                <EmptyState type="all" />
+              ) : (
+                data?.notifications.map((notification) => (
+                  <NotificationItem key={notification.id} notification={notification} />
+                ))
+              )}
+            </TabsContent>
 
-        <TabsContent value="overdue" className="mt-4 space-y-3">
-          {overdueNotifications.map((notification) => (
-            <NotificationItem key={notification.id} notification={notification} />
-          ))}
-        </TabsContent>
+            <TabsContent value="unread" className="mt-4 space-y-3">
+              {data?.notifications.filter((n) => !n.read).length === 0 ? (
+                <EmptyState type="unread" />
+              ) : (
+                data?.notifications
+                  .filter((n) => !n.read)
+                  .map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
+                  ))
+              )}
+            </TabsContent>
 
-        <TabsContent value="payments" className="mt-4 space-y-3">
-          {paymentNotifications.map((notification) => (
-            <NotificationItem key={notification.id} notification={notification} />
-          ))}
-        </TabsContent>
+            <TabsContent value="overdue" className="mt-4 space-y-3">
+              {data?.notifications.filter((n) => n.type === "overdue").length === 0 ? (
+                <EmptyState type="overdue" />
+              ) : (
+                data?.notifications
+                  .filter((n) => n.type === "overdue")
+                  .map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
+                  ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="payment" className="mt-4 space-y-3">
+              {data?.notifications.filter((n) => n.type === "payment").length === 0 ? (
+                <EmptyState type="payment" />
+              ) : (
+                data?.notifications
+                  .filter((n) => n.type === "payment")
+                  .map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
+                  ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="recommendation" className="mt-4 space-y-3">
+              {data?.notifications.filter((n) => n.type === "recommendation").length === 0 ? (
+                <EmptyState type="recommendation" />
+              ) : (
+                data?.notifications
+                  .filter((n) => n.type === "recommendation")
+                  .map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
+                  ))
+              )}
+            </TabsContent>
+          </>
+        )}
       </Tabs>
     </div>
   );

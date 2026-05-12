@@ -4,7 +4,10 @@ export interface InvoiceClient {
   id: string;
   name: string;
   email: string | null;
+  phone: string | null;
   paymentBehaviorTier: string | null;
+  paymentBehaviorScore: number | null;
+  avgDaysToPay: number | null;
 }
 
 export interface InvoicePayment {
@@ -12,6 +15,7 @@ export interface InvoicePayment {
   amount: number;
   date: string;
   method: string | null;
+  daysFromDue: number | null;
 }
 
 export interface Invoice {
@@ -74,5 +78,46 @@ export function useInvoices(filters: InvoicesFilters = {}) {
   return useQuery({
     queryKey: ["invoices", filters],
     queryFn: () => fetchInvoices(filters),
+  });
+}
+
+// Individual invoice detail types
+export interface FollowUpAction {
+  id: string;
+  actionType: string;
+  actionDate: string;
+  notes: string | null;
+  outcome: string | null;
+  nextActionDate: string | null;
+  createdBy: { id: string; fullName: string | null } | null;
+  ledToPayment: boolean;
+}
+
+export interface Recommendation {
+  id: string;
+  type: string;
+  text: string;
+  confidence: number | null;
+  reasoning: string | null;
+}
+
+export interface InvoiceDetail extends Invoice {
+  followUpActions: FollowUpAction[];
+  recommendations: Recommendation[];
+}
+
+async function fetchInvoice(id: string): Promise<InvoiceDetail> {
+  const response = await fetch(`/api/invoices/${id}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch invoice");
+  }
+  return response.json();
+}
+
+export function useInvoice(id: string) {
+  return useQuery({
+    queryKey: ["invoice", id],
+    queryFn: () => fetchInvoice(id),
+    enabled: !!id,
   });
 }
