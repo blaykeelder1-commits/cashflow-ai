@@ -141,6 +141,7 @@ model Client {
   name                 String
   email                String?
   phone                String?
+  industry             String?  // Client's industry for benchmarking
 
   // Computed scores (updated by AI service)
   paymentBehaviorScore Int?     @map("payment_behavior_score") // 0-100
@@ -150,6 +151,13 @@ model Client {
   totalPaid            Decimal  @default(0) @map("total_paid") @db.Decimal(15, 2)
   totalOutstanding     Decimal  @default(0) @map("total_outstanding") @db.Decimal(15, 2)
 
+  // Enhanced AI fields
+  industryBenchmarkDelta   Int?     @map("industry_benchmark_delta") // How they compare to industry avg (-50 to +50)
+  preferredPaymentMethod   String?  @map("preferred_payment_method") // ach, check, credit_card, wire
+  bestContactDay           String?  @map("best_contact_day") // monday, tuesday, etc.
+  bestContactHour          Int?     @map("best_contact_hour") // 0-23
+  seasonalPaymentPattern   String?  @map("seasonal_payment_pattern") // JSON string of monthly patterns
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -158,6 +166,8 @@ model Client {
   invoices          Invoice[]
   followUpActions   FollowUpAction[]
   aiRecommendations AIRecommendation[]
+  seasonalPatterns  ClientSeasonalPattern[]
+  recoveryEvents    RecoveryEvent[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId, paymentBehaviorScore])
@@ -201,6 +211,7 @@ model Invoice {
   payments          InvoicePayment[]
   followUpActions   FollowUpAction[]
   aiRecommendations AIRecommendation[]
+  recoveryEvents    RecoveryEvent[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId, status])
@@ -214,8 +225,14 @@ model InvoicePayment {
   invoiceId     String   @map("invoice_id")
   amount        Decimal  @db.Decimal(15, 2)
   paymentDate   DateTime @map("payment_date") @db.Date
-  paymentMethod String?  @map("payment_method")
+  paymentMethod String?  @map("payment_method") // ach, check, credit_card, wire, other
   externalId    String?  @map("external_id")
+
+  // Payment timing analytics
+  dayOfWeek     Int?     @map("day_of_week") // 0-6 (Sunday-Saturday)
+  hourOfDay     Int?     @map("hour_of_day") // 0-23
+  daysFromDue   Int?     @map("days_from_due") // Negative = early, Positive = late
+
   createdAt     DateTime @default(now()) @map("created_at")
 
   // Relations
@@ -235,11 +252,18 @@ model FollowUpAction {
   clientId       String?  @map("client_id")
   userId         String?  @map("user_id")
 
-  actionType     String    @map("action_type") // email, call, meeting, escalation
+  actionType     String    @map("action_type") // email, call, meeting, escalation, sms
   actionDate     DateTime  @default(now()) @map("action_date")
   notes          String?   @db.Text
-  outcome        String?   // no_response, promised_payment, dispute, partial_payment
+  outcome        String?   // no_response, promised_payment, dispute, partial_payment, paid, escalated
   nextActionDate DateTime? @map("next_action_date") @db.Date
+
+  // Communication timing analytics
+  dayOfWeek       Int?     @map("day_of_week") // 0-6 (Sunday-Saturday)
+  hourOfDay       Int?     @map("hour_of_day") // 0-23
+  responseTimeMs  Int?     @map("response_time_ms") // How long until they responded
+  ledToPayment    Boolean  @default(false) @map("led_to_payment") // Did this action result in payment?
+  daysToPayment   Int?     @map("days_to_payment") // If ledToPayment, how many days?
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -249,6 +273,8 @@ model FollowUpAction {
   client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId, actionType, outcome])
+  @@index([clientId, ledToPayment])
   @@map("follow_up_actions")
 }
 
@@ -339,4 +365,317 @@ model AuditLog {
 
   @@index([organizationId, createdAt])
   @@map("audit_logs")
+}
+
+// ============================================
+// LEARNING ENHANCEMENT #1: INDUSTRY BENCHMARKS
+// ============================================
+
+model IndustryBenchmark {
+  id                    String   @id @default(cuid())
+  industry              String   @unique // technology, healthcare, retail, manufacturing, etc.
+
+  // Payment behavior benchmarks
+  avgDaysToPay          Decimal  @map("avg_days_to_pay") @db.Decimal(5, 1)
+  medianDaysToPay       Decimal  @map("median_days_to_pay") @db.Decimal(5, 1)
+  stdDevDaysToPay       Decimal  @map("std_dev_days_to_pay") @db.Decimal(5, 1)
+
+  // Risk distribution
+  pctPayOnTime          Decimal  @map("pct_pay_on_time") @db.Decimal(5, 2) // % that pay by due date
+  pctPay30Days          Decimal  @map("pct_pay_30_days") @db.Decimal(5, 2) // % that pay within 30 days overdue
+  pctPay60Days          Decimal  @map("pct_pay_60_days") @db.Decimal(5, 2)
+  pctPay90Plus          Decimal  @map("pct_pay_90_plus") @db.Decimal(5, 2)
+
+  // Seasonal patterns (JSON: {"Q1": 1.1, "Q2": 0.9, "Q3": 0.95, "Q4": 1.05})
+  seasonalMultipliers   String?  @map("seasonal_multipliers") @db.Text
+
+  // Economic sensitivity (how much this industry is affected by economic conditions)
+  economicSensitivity   Decimal  @map("economic_sensitivity") @db.Decimal(3, 2) // 0.0-2.0 multiplier
+
+  sampleSize            Int      @map("sample_size") // Number of data points
+  lastUpdated           DateTime @map("last_updated") @updatedAt
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@map("industry_benchmarks")
+}
+
+// ============================================
+// LEARNING ENHANCEMENT #2: SEASONAL PATTERNS
+// ============================================
+
+model ClientSeasonalPattern {
+  id             String   @id @default(cuid())
+  clientId       String   @map("client_id")
+
+  // Monthly payment behavior multipliers (1.0 = normal, 1.2 = 20% faster, 0.8 = 20% slower)
+  januaryMultiplier     Decimal  @default(1.0) @map("january_multiplier") @db.Decimal(3, 2)
+  februaryMultiplier    Decimal  @default(1.0) @map("february_multiplier") @db.Decimal(3, 2)
+  marchMultiplier       Decimal  @default(1.0) @map("march_multiplier") @db.Decimal(3, 2)
+  aprilMultiplier       Decimal  @default(1.0) @map("april_multiplier") @db.Decimal(3, 2)
+  mayMultiplier         Decimal  @default(1.0) @map("may_multiplier") @db.Decimal(3, 2)
+  juneMultiplier        Decimal  @default(1.0) @map("june_multiplier") @db.Decimal(3, 2)
+  julyMultiplier        Decimal  @default(1.0) @map("july_multiplier") @db.Decimal(3, 2)
+  augustMultiplier      Decimal  @default(1.0) @map("august_multiplier") @db.Decimal(3, 2)
+  septemberMultiplier   Decimal  @default(1.0) @map("september_multiplier") @db.Decimal(3, 2)
+  octoberMultiplier     Decimal  @default(1.0) @map("october_multiplier") @db.Decimal(3, 2)
+  novemberMultiplier    Decimal  @default(1.0) @map("november_multiplier") @db.Decimal(3, 2)
+  decemberMultiplier    Decimal  @default(1.0) @map("december_multiplier") @db.Decimal(3, 2)
+
+  // Quarterly patterns for quick lookups
+  q1Multiplier          Decimal  @default(1.0) @map("q1_multiplier") @db.Decimal(3, 2)
+  q2Multiplier          Decimal  @default(1.0) @map("q2_multiplier") @db.Decimal(3, 2)
+  q3Multiplier          Decimal  @default(1.0) @map("q3_multiplier") @db.Decimal(3, 2)
+  q4Multiplier          Decimal  @default(1.0) @map("q4_multiplier") @db.Decimal(3, 2)
+
+  // Confidence based on data points
+  dataPoints            Int      @default(0) @map("data_points")
+  confidenceScore       Decimal  @default(0) @map("confidence_score") @db.Decimal(3, 2)
+
+  lastUpdated           DateTime @map("last_updated") @updatedAt
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId])
+  @@map("client_seasonal_patterns")
+}
+
+// ============================================
+// LEARNING ENHANCEMENT #3: ECONOMIC INDICATORS
+// ============================================
+
+model EconomicIndicator {
+  id                String   @id @default(cuid())
+  indicatorDate     DateTime @map("indicator_date") @db.Date
+
+  // Key economic metrics
+  fedFundsRate      Decimal? @map("fed_funds_rate") @db.Decimal(5, 2)
+  unemploymentRate  Decimal? @map("unemployment_rate") @db.Decimal(5, 2)
+  inflationRate     Decimal? @map("inflation_rate") @db.Decimal(5, 2)
+  gdpGrowthRate     Decimal? @map("gdp_growth_rate") @db.Decimal(5, 2)
+  consumerConfidence Decimal? @map("consumer_confidence") @db.Decimal(6, 2)
+
+  // Business-specific indicators
+  businessConfidence   Decimal? @map("business_confidence") @db.Decimal(6, 2)
+  creditAvailability   Decimal? @map("credit_availability") @db.Decimal(5, 2) // Index 0-100
+  supplyChainStress    Decimal? @map("supply_chain_stress") @db.Decimal(5, 2) // Index 0-100
+
+  // Calculated impact score (-1.0 to 1.0, negative = harder to collect)
+  paymentImpactScore   Decimal  @map("payment_impact_score") @db.Decimal(4, 3)
+
+  source            String?  // fed, bls, census, calculated
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([indicatorDate])
+  @@index([indicatorDate])
+  @@map("economic_indicators")
+}
+
+// ============================================
+// LEARNING ENHANCEMENT #4: COMMUNICATION TIMING
+// ============================================
+
+model CommunicationEffectiveness {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+
+  // Segmentation
+  clientTier       String?  @map("client_tier") // A, B, C, D or null for aggregate
+  industry         String?  // null for aggregate across industries
+  actionType       String   @map("action_type") // email, call, sms, meeting
+
+  // Day of week effectiveness (% that led to payment)
+  sundayRate       Decimal  @default(0) @map("sunday_rate") @db.Decimal(5, 4)
+  mondayRate       Decimal  @default(0) @map("monday_rate") @db.Decimal(5, 4)
+  tuesdayRate      Decimal  @default(0) @map("tuesday_rate") @db.Decimal(5, 4)
+  wednesdayRate    Decimal  @default(0) @map("wednesday_rate") @db.Decimal(5, 4)
+  thursdayRate     Decimal  @default(0) @map("thursday_rate") @db.Decimal(5, 4)
+  fridayRate       Decimal  @default(0) @map("friday_rate") @db.Decimal(5, 4)
+  saturdayRate     Decimal  @default(0) @map("saturday_rate") @db.Decimal(5, 4)
+
+  // Hour of day effectiveness (JSON: {"9": 0.15, "10": 0.18, ...})
+  hourlyRates      String?  @map("hourly_rates") @db.Text
+
+  // Best performing combinations
+  bestDay          String?  @map("best_day")
+  bestHour         Int?     @map("best_hour")
+  bestDayHourRate  Decimal? @map("best_day_hour_rate") @db.Decimal(5, 4)
+
+  // Sample sizes for confidence
+  totalAttempts    Int      @default(0) @map("total_attempts")
+  successfulAttempts Int    @default(0) @map("successful_attempts")
+
+  lastUpdated      DateTime @map("last_updated") @updatedAt
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([organizationId, clientTier, industry, actionType])
+  @@index([organizationId])
+  @@map("communication_effectiveness")
+}
+
+// ============================================
+// LEARNING ENHANCEMENT #5: PAYMENT METHOD ANALYTICS
+// ============================================
+
+model PaymentMethodStats {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+
+  paymentMethod    String   @map("payment_method") // ach, check, credit_card, wire, other
+
+  // Performance metrics
+  avgDaysToPay     Decimal  @map("avg_days_to_pay") @db.Decimal(5, 1)
+  medianDaysToPay  Decimal  @map("median_days_to_pay") @db.Decimal(5, 1)
+  onTimeRate       Decimal  @map("on_time_rate") @db.Decimal(5, 4) // % paid on time
+
+  // Failure/bounce rates
+  failureRate      Decimal  @default(0) @map("failure_rate") @db.Decimal(5, 4)
+  avgRetryDays     Decimal? @map("avg_retry_days") @db.Decimal(5, 1) // Days to successful retry after failure
+
+  // Volume metrics
+  totalPayments    Int      @default(0) @map("total_payments")
+  totalAmount      Decimal  @default(0) @map("total_amount") @db.Decimal(15, 2)
+  avgPaymentAmount Decimal  @default(0) @map("avg_payment_amount") @db.Decimal(15, 2)
+
+  // Reliability score (0-100)
+  reliabilityScore Int      @default(50) @map("reliability_score")
+
+  lastUpdated      DateTime @map("last_updated") @updatedAt
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([organizationId, paymentMethod])
+  @@index([organizationId])
+  @@map("payment_method_stats")
+}
+
+// ============================================
+// BILLING: RECOVERY EVENT TRACKING
+// ============================================
+
+model RecoveryEvent {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+  invoiceId        String   @map("invoice_id")
+  clientId         String?  @map("client_id")
+
+  // Event classification
+  eventType        String   @map("event_type") // overdue_recovery, accelerated_payment, gap_avoided
+
+  // Financial details
+  invoiceAmount    Decimal  @map("invoice_amount") @db.Decimal(15, 2)
+  recoveredAmount  Decimal  @map("recovered_amount") @db.Decimal(15, 2)
+
+  // For tiered pricing
+  daysOverdue      Int?     @map("days_overdue") // At time of recovery
+  daysAccelerated  Int?     @map("days_accelerated") // If paid early, how many days
+
+  // Platform fee calculation
+  feePercentage    Decimal  @map("fee_percentage") @db.Decimal(5, 4) // e.g., 0.10 for 10%
+  platformFee      Decimal  @map("platform_fee") @db.Decimal(15, 2)
+
+  // Attribution - what led to recovery?
+  attributedTo     String?  @map("attributed_to") // ai_recommendation, follow_up, automatic
+  recommendationId String?  @map("recommendation_id")
+  followUpActionId String?  @map("follow_up_action_id")
+
+  // Status
+  status           String   @default("pending") // pending, confirmed, disputed, paid_out
+  confirmedAt      DateTime? @map("confirmed_at")
+
+  // Billing cycle reference
+  billingCycleId   String?  @map("billing_cycle_id")
+
+  eventDate        DateTime @default(now()) @map("event_date")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  client       Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  billingCycle BillingCycle? @relation(fields: [billingCycleId], references: [id])
+
+  @@index([organizationId, eventDate])
+  @@index([organizationId, status])
+  @@index([billingCycleId])
+  @@map("recovery_events")
+}
+
+// ============================================
+// BILLING: BILLING CYCLES
+// ============================================
+
+model BillingCycle {
+  id               String   @id @default(cuid())
+  organizationId   String   @map("organization_id")
+
+  // Billing period
+  periodStart      DateTime @map("period_start") @db.Date
+  periodEnd        DateTime @map("period_end") @db.Date
+
+  // Totals
+  totalRecovered   Decimal  @default(0) @map("total_recovered") @db.Decimal(15, 2)
+  totalFees        Decimal  @default(0) @map("total_fees") @db.Decimal(15, 2)
+
+  // Breakdown by type
+  overdueRecovery90Plus  Decimal @default(0) @map("overdue_recovery_90_plus") @db.Decimal(15, 2)
+  overdueRecovery30to90  Decimal @default(0) @map("overdue_recovery_30_to_90") @db.Decimal(15, 2)
+  acceleratedPayments    Decimal @default(0) @map("accelerated_payments") @db.Decimal(15, 2)
+  gapsAvoided            Decimal @default(0) @map("gaps_avoided") @db.Decimal(15, 2)
+
+  // Fee breakdown
+  fee90Plus        Decimal  @default(0) @map("fee_90_plus") @db.Decimal(15, 2)
+  fee30to90        Decimal  @default(0) @map("fee_30_to_90") @db.Decimal(15, 2)
+  feeAccelerated   Decimal  @default(0) @map("fee_accelerated") @db.Decimal(15, 2)
+  feeGapsAvoided   Decimal  @default(0) @map("fee_gaps_avoided") @db.Decimal(15, 2)
+
+  // Status
+  status           String   @default("open") // open, closed, invoiced, paid
+  invoicedAt       DateTime? @map("invoiced_at")
+  paidAt           DateTime? @map("paid_at")
+
+  // Payment details
+  stripeInvoiceId  String?  @map("stripe_invoice_id")
+  stripePaymentId  String?  @map("stripe_payment_id")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  recoveryEvents   RecoveryEvent[]
+
+  @@unique([organizationId, periodStart])
+  @@index([organizationId, status])
+  @@map("billing_cycles")
+}
+
+// ============================================
+// MODEL TRAINING METADATA
+// ============================================
+
+model ModelTrainingLog {
+  id               String   @id @default(cuid())
+  modelType        String   @map("model_type") // payment_prediction, recovery_likelihood, communication_timing
+
+  // Training metrics
+  trainingDataSize Int      @map("training_data_size")
+  validationScore  Decimal  @map("validation_score") @db.Decimal(5, 4) // 0-1 accuracy/F1
+
+  // Feature importance (JSON)
+  featureImportance String? @map("feature_importance") @db.Text
+
+  // Hyperparameters (JSON)
+  hyperparameters   String?  @db.Text
+
+  // Performance tracking
+  productionAccuracy Decimal? @map("production_accuracy") @db.Decimal(5, 4)
+  predictionCount    Int      @default(0) @map("prediction_count")
+
+  trainedAt        DateTime @map("trained_at")
+  deployedAt       DateTime? @map("deployed_at")
+  retiredAt        DateTime? @map("retired_at")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([modelType, trainedAt])
+  @@map("model_training_logs")
 }
